@@ -66,13 +66,17 @@ class Game:
         return full_map
 
     @staticmethod
-    def move_num(move):
+    def move_num(move_char):
         return {"u": 0, "ur": 1, "ru": 1, "r": 2, "dr": 3, "rd": 3,
-                "d": 4, "dl": 5, "ld": 5, "l": 6, "ul": 7, "lu": 7}[move]
+                "d": 4, "dl": 5, "ld": 5, "l": 6, "ul": 7, "lu": 7}[move_char]
 
     def _place_edge(self, pos, move_num):  # TODO: lite
         self.map[pos[0], pos[1], move_num] = 1
-        self.map[pos[0] + self.moves[move_num][0], pos[1] + self.moves[move_num][1], (move_num + 4) % 8] = 1  # opposite side
+        self.map[pos[0] + self.moves[move_num][0], pos[1] + self.moves[move_num][1], (move_num + 4) % 8] = 1
+
+    def _erase_edge(self, pos, move_num):
+        self.map[pos[0]. pos[1], move_num] = 0
+        self.map[pos[0] + self.moves[move_num][0], pos[1] + self.moves[move_num][1], (move_num + 4) % 8] = 0
 
     def _is_edge(self, pos, move_num):  # TODO: lite
         return self.map[pos[0], pos[1], move_num] == 1
@@ -92,7 +96,6 @@ class Game:
         return False
 
     def move(self, move_num):  # TODO: lite
-        self.last_turn = self.turn
         self.history['move_nums'].append(move_num)
         self.history['turns'].append(self.turn)
         if not self._is_edge(self.ball, move_num):
@@ -120,6 +123,19 @@ class Game:
             raise GameOver("Writing over line", winner="P1" if self.turn is "P2" else "P2")
         if not self._is_in_graph(self.ball, move_num):  # swap turn if player didn't bounce
             self.turn = "P1" if self.turn is "P2" else "P2"
+
+    def undo_last_move(self):
+        last_move_num = self.history['move_nums'][-1]
+        last_move = self.moves[last_move_num][:]
+        self.ball = [self.ball[0] - last_move[0], self.ball[1] - last_move[1]]
+        self._erase_edge(self.ball, last_move_num)
+        self.turn = self.history['turns'][-1]
+        self.last_turn = self.history['turns'][-2]
+        self.history['move_nums'].pop()
+        self.history['turns'].pop()
+        self.history['winner'] = None
+        self.history['win_cause'] = None
+        self.history['game_ended'] = False
 
     def test(self, move_num):
         if not self._is_edge(self.ball, move_num):
