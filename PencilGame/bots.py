@@ -1,58 +1,46 @@
-from PencilGame.pencilGame import GameOver, Game
+from PencilGame.pencilGame import Game
 import numpy as np
 import random
 
 
 class Bot:
     def __init__(self, game=None):
-        self.true_game = game
-
-    def update(self, game):
-        self.true_game = game
+        self.game = game
 
     def get_move(self):
         pass
 
 
-class SearchBot(Bot):  # TODO: Real priority queued search with distance from both goals metric
+class SearchBot(Bot):  # TODO: Real priority queued search
     def __init__(self, game=None, max_depth=1):
         super().__init__(game=game)
         self.max_depth = max_depth
         self.best_move = None
 
-    def update(self, game):
-        super().update(game)
-        self.best_move = None
-
-    def search(self, game, depth, set_best_move=False):
-        """Returns lowest height you can achieve in *depth* moves if turn == P1 else ^highest"""
+    def search(self, depth, set_best_move=False):
+        """Returns [lowest] height you can achieve in *depth* moves if turn == P1 else [highest]"""
         if depth <= 0:
-            return game.ball[1]
+            return self.game.get_score()
 
         game_scores = []
-        for dir_num in range(len(self.true_game.moves)):
-            test_game = game.copy()
-            try:
-                test_game.move(move_num=dir_num)
-                game_scores.append(self.search(test_game, depth-1))  # Does not happen if GameOver
-            except GameOver as e:
-                if e.winner is "P1":
-                    game_scores.append(1000)
-                if e.winner is "P2":
-                    game_scores.append(-1000)
-            # print("TEST")
-            # [print(line) for line in test_game.render_map()]
-        if game.turn is "P1":
-            if set_best_move:
-                self.best_move = np.argmax(game_scores)
-            return max(game_scores)
-        else:
+        for dir_num in range(len(self.game.move_vectors)):
+            map, score, winner, history = self.game.step(move_num=dir_num)
+            if winner:
+                game_scores.append(score)
+            else:
+                game_scores.append(self.search(depth - 1))
+            self.game.undo_last_step()
+        if self.game.turn is "P1":
             if set_best_move:
                 self.best_move = np.argmin(game_scores)
             return min(game_scores)
+        else:
+            if set_best_move:
+                self.best_move = np.argmax(game_scores)
+            return max(game_scores)
 
     def get_move(self):
-        self.search(self.true_game, self.max_depth, set_best_move=True)
+        self.search(self.max_depth, set_best_move=True)
         return self.best_move
 
 
@@ -63,20 +51,20 @@ class NNBot(Bot):  # has to flip the board himself if player is P2
         self.prevent_blunder = prevent_blunder
 
     def get_move(self):
-        env = self.true_game.get_env()
-        if self.true_game.turn is "P2":
+        env = self.game.get_env()
+        if self.game.turn is "P2":
             env = np.rot90(env, k=2, axes=(1, 2))
         votes = self.model.predict(np.array([env]))
-        if self.true_game.turn is "P2":
+        if self.game.turn is "P2":
             votes = np.roll(votes, 4)
         if self.prevent_blunder:
             for (move_num, vote) in sorted(enumerate(votes), key=lambda x: x[1], reverse=True):
                 print(move_num)
                 try:
-                    self.true_game.test(move_num)
+                    self.game.test(move_num)
                     return move_num
                 except GameOver as e:
-                    if e.winner is self.true_game.turn:
+                    if e.winner is self.game.turn:
                         return move_num
                     else:
                         continue
@@ -97,10 +85,10 @@ class RandomBot(Bot):
                 move_num = random.choice(possibilities)
                 possibilities.remove(move_num)
                 try:
-                    self.true_game.test(move_num)
+                    self.game.test(move_num)
                     return move_num
                 except GameOver as e:
-                    if e.winner is not self.true_game.turn:
+                    if e.winner is not self.game.turn:
                         continue
             return random.randrange(8)
         else:
@@ -118,7 +106,7 @@ if __name__ == "__main__":
             else:
                 brute.update(game)
                 move = brute.get_move()
-            game.move(move_num=move)
+            game.step(move_num=move)
         except KeyError as e:
             print(e)
         except GameOver as e:

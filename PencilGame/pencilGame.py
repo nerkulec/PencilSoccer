@@ -1,13 +1,6 @@
 import numpy as np
 
 
-class GameOver(Exception):
-    def __init__(self, message, winner=None):
-        super().__init__(message)
-        self.winner = winner
-        self.message = message
-
-
 class Game:
     def __init__(self, width=7, height=8, lite=False):
         self.width = width
@@ -15,33 +8,20 @@ class Game:
         self.bot_P1 = None
         self.bot_P2 = None
         self.lite = lite
-        self.moves = [[0, -1], [1, -1], [1, 0], [1, 1],
-                      [0, 1], [-1, 1], [-1, 0], [-1, -1]]  # UP-> 0, then clockwise
-        self.possible_move_nums = [0, 1, 2, 3, 4, 5, 6, 7]
+        self.move_vectors = [[0, -1], [1, -1], [1, 0], [1, 1],
+                             [0, 1], [-1, 1], [-1, 0], [-1, -1]]  # UP-> 0, then clockwise
         self.map = self.gen_map()
         self.ball = [self.width // 2, (self.height - 1) // 2]
         self.turn = "P1"
-        self.last_turn = "P1"
+        self.last_turn = "P2"
         self.P1_goal = [[self.width//2-1, 0],
                         [self.width//2, 0],
-                        [self.width//2+1, 0]]
+                        [self.width//2+1, 0]]  # TOP
         self.P2_goal = [[self.width//2-1, self.height-1],
                         [self.width//2, self.height-1],
-                        [self.width//2+1, self.height-1]]
-        self.history = {
-            'width': width,
-            'height': height,
-            'lite': lite,
-            'start_pos': self.ball,
-            'starting_player': self.turn,
-            'P1_goal': self.P1_goal,
-            'P2_goal': self.P2_goal,
-            'game_ended': False,
-            'winner': None,
-            'win_cause': None,
-            'move_nums': [],
-            'turns': []
-        }
+                        [self.width//2+1, self.height-1]]  # BOTTOM
+        self.move_history = []  # Format: [x, y, move_num, player]
+        self.winner = None
 
     def set_bot_P1(self, bot):
         self.bot_P1 = bot
@@ -51,12 +31,12 @@ class Game:
 
     def copy(self):
         game_copy = Game(width=self.width, height=self.height, lite=self.lite)
-        for move in self.history['move_nums']:  # TODO: lite
-            game_copy.move(move_num=move)
+        for move in self.move_history:
+            game_copy.step(move_num=move[2])
         return game_copy
 
     def gen_map(self):
-        full_map = np.zeros(shape=(self.width, self.height, len(self.moves)))
+        full_map = np.zeros(shape=(self.width, self.height, len(self.move_vectors)))
         full_map[:, 0, :3] = 1
         full_map[:, 0, -2:] = 1
         full_map[:, self.height-1, 2:7] = 1
@@ -72,101 +52,83 @@ class Game:
 
     def _place_edge(self, pos, move_num):  # TODO: lite
         self.map[pos[0], pos[1], move_num] = 1
-        self.map[pos[0] + self.moves[move_num][0], pos[1] + self.moves[move_num][1], (move_num + 4) % 8] = 1
+        new_pos = [pos[0] + self.move_vectors[move_num][0], pos[1] + self.move_vectors[move_num][1]]
+        self.map[new_pos[0], new_pos[1], (move_num + 4) % 8] = 1
 
     def _erase_edge(self, pos, move_num):
-        self.map[pos[0]. pos[1], move_num] = 0
-        self.map[pos[0] + self.moves[move_num][0], pos[1] + self.moves[move_num][1], (move_num + 4) % 8] = 0
+        self.map[pos[0], pos[1], move_num] = 0
+        new_pos = [pos[0] + self.move_vectors[move_num][0], pos[1] + self.move_vectors[move_num][1]]
+        self.map[new_pos[0], new_pos[1], (move_num + 4) % 8] = 0
 
     def _is_edge(self, pos, move_num):  # TODO: lite
         return self.map[pos[0], pos[1], move_num] == 1
 
     def _is_escapable(self, pos, except_move_num=None):
-        for move_num in range(len(self.moves)):
-            if not self._is_edge(pos, move_num) and (not except_move_num or move_num != (except_move_num+4) % 8):
+        for move_num in [x for x in range(len(self.move_vectors)) if x is not except_move_num]:
+            if self.map[pos[0], pos[1], move_num] == 0:
                 return True
         return False
 
     def _is_in_graph(self, pos, last_move_num=None):
         """ Returns True if edge is in graph. If last_move_num is specified ignores last move """
-        for move_num in self.possible_move_nums:
+        for move_num in range(len(self.move_vectors)):
             if last_move_num is None or move_num != (last_move_num + 4) % 8:
                 if self._is_edge(pos, move_num):
                     return True
         return False
 
-    def move(self, move_num):  # TODO: lite
-        self.history['move_nums'].append(move_num)
-        self.history['turns'].append(self.turn)
+    def get_score(self):  # Close to P1's goal -> positive, middle -> 0, close to P2's goal -> negative
+                          # P1 won -> -1000000000, P2 won -> 1000000000
+        if self.winner is None:
+            return self.ball[1] - (self.height - 1) // 2
+        else:
+            return -1000000000 if self.winner is "P1" else 1000000000
+
+    def step(self, move_num, force=True):  # TODO: lite
+        self.move_history.append([self.ball[0], self.ball[1], move_num, self.turn])
         if not self._is_edge(self.ball, move_num):
             self._place_edge(self.ball, move_num)
-            self.ball = [self.ball[0] + self.moves[move_num][0], self.ball[1] + self.moves[move_num][1]]  # move
+            self.ball = [self.ball[0] + self.move_vectors[move_num][0], self.ball[1] + self.move_vectors[move_num][1]]
             if self.ball in self.P1_goal:
-                self.history['winner'] = "P2"
-                self.history['win_cause'] = "goal"
-                self.history['game_ended'] = True
-                raise GameOver("Ball in P1's goal", winner="P2")
+                self.winner = "P2"
             if self.ball in self.P2_goal:
-                self.history['winner'] = "P1"
-                self.history['win_cause'] = "goal"
-                self.history['game_ended'] = True
-                raise GameOver("Ball in P2's goal", winner="P1")
-            if not self._is_escapable(self.ball):
-                self.history['winner'] = "P1" if self.turn is "P2" else "P2"
-                self.history['win_cause'] = "inescapable"
-                self.history['game_ended'] = True
-                raise GameOver("Inescapable", winner="P1" if self.turn is "P2" else "P2")
+                self.winner = "P1"
         else:
-            self.history['winner'] = "P1" if self.turn is "P2" else "P2"
-            self.history['win_cause'] = "overwriting"
-            self.history['game_ended'] = True
-            raise GameOver("Writing over line", winner="P1" if self.turn is "P2" else "P2")
-        if not self._is_in_graph(self.ball, move_num):  # swap turn if player didn't bounce
+            if force:
+                self.winner = "P1" if self.turn is "P2" else "P2"
+            else:
+                self.winner = "overwriting"
+        if not self._is_in_graph(self.ball, last_move_num=move_num):  # swap turn if player didn't bounce
             self.turn = "P1" if self.turn is "P2" else "P2"
+        return self.map, self.get_score(), self.winner, self.move_history
 
-    def undo_last_move(self):
-        last_move_num = self.history['move_nums'][-1]
-        last_move = self.moves[last_move_num][:]
+    def undo_last_step(self):
+        last_turn = self.move_history.pop()
+        last_move = self.move_vectors[last_turn[2]]
         self.ball = [self.ball[0] - last_move[0], self.ball[1] - last_move[1]]
-        self._erase_edge(self.ball, last_move_num)
-        self.turn = self.history['turns'][-1]
-        self.last_turn = self.history['turns'][-2]
-        self.history['move_nums'].pop()
-        self.history['turns'].pop()
-        self.history['winner'] = None
-        self.history['win_cause'] = None
-        self.history['game_ended'] = False
-
-    def test(self, move_num):
-        if not self._is_edge(self.ball, move_num):
-            test_ball = [self.ball[0] + self.moves[move_num][0], self.ball[1] + self.moves[move_num][1]]
-            if test_ball in self.P1_goal:
-                raise GameOver("Ball in P1's goal", winner="P2")
-            if test_ball in self.P2_goal:
-                raise GameOver("Ball in P2's goal", winner="P1")
-            if not self._is_escapable(test_ball, except_move_num=move_num):
-                raise GameOver("Inescapable", winner="P1" if self.turn is "P2" else "P2")
+        self._erase_edge(self.ball, last_turn[2])
+        self.turn = last_turn[3]
+        self.winner = None
+        if len(self.move_history) >= 1:
+            self.last_turn = self.move_history[-1][3]
         else:
-            raise GameOver("Writing over line", winner="P1" if self.turn is "P2" else "P2")
+            self.last_turn = "P2"
 
     def play(self, move_nums=None, continue_playing=False, silent=False):
         """Plays the game indefinitely, returns winner"""
         if move_nums:
             for move_num in move_nums:
-                try:
-                    self.move(move_num)
-                except GameOver as e:
+                map, score, winner, history = self.step(move_num)
+                if winner:
                     if not silent:
-                        print("Winner is {}".format(e.winner))
-                        print(e.message)
-                    return e.winner, self.history['win_cause']
+                        print("Winner is {}".format(winner))
+                    return winner
         if move_nums is None or continue_playing:
             while True:
                 if not silent:
                     [print(line) for line in self.render_map()]
                 if self.turn is "P1":
                     if self.bot_P1 is not None:
-                        self.bot_P1.update(self)
                         move = self.bot_P1.get_move()
                     else:
                         move = Game.move_num(input("({},{}) {}:".format(self.ball[0], self.ball[1], self.turn)))
@@ -176,13 +138,11 @@ class Game:
                         move = self.bot_P2.get_move()
                     else:
                         move = Game.move_num(input("({},{}) {}:".format(self.ball[0], self.ball[1], self.turn)))
-                try:
-                    self.move(move_num=move)
-                except GameOver as e:
+                map, score, winner, history = self.step(move_num=move)
+                if winner:
                     if not silent:
-                        print("Winner is {}".format(e.winner))
-                        print(e.message)
-                    return e.winner, self.history['win_cause']
+                        print("Winner is {}".format(winner))
+                    return winner
 
     def render_map(self):
         map_graph = [list(' '*(3*self.width)) for _ in range(3*self.height)]
@@ -211,9 +171,8 @@ class Game:
         return env
 
     def get_winner_history(self):
-        assert self.history['game_ended'] is True, "game has not ended"
-        history = [move for (i, move) in enumerate(self.history['move_nums'])
-                   if self.history['turns'][i] == self.history['winner']]
+        assert self.winner in ["P1", "P2"], "game has not ended"
+        history = [move[2] for move in self.move_history if move[3] is self.winner]
         one_hot = np.zeros(shape=(len(history), 8), dtype='float16')
         for i in range(len(history)):
             one_hot[i][history[i]] = 1
@@ -223,14 +182,3 @@ class Game:
 if __name__ == "__main__":
     game = Game()
     print(game.get_env())
-    while True:
-        try:
-            [print(line) for line in game.render_map()]
-            move = input("({},{}) {}:".format(game.ball[0], game.ball[1], game.turn))
-            game.move(move_num=game.move_num(move))
-        except KeyError as e:
-            print(e)
-        except GameOver as e:
-            print("Winner is {}".format(e.winner))
-            print(e.message)
-            break

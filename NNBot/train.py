@@ -53,7 +53,7 @@ for epoch in range(epochs):
                 if random.random() < searchbot_chance:
                     bot.update(game)
                     move = bot.get_move()
-                game.move(move_num=move)
+                game.step(move_num=move)
         except GameOver as e:
             winners_moves.extend(game.get_winner_history())
             if game.history['winner'] is 'P1':
@@ -74,7 +74,7 @@ for game_num in tqdm(range(test_games)):   # P1 - computer, P2 - random
                 move = np.argmax(model.predict(np.array([env])))
             if game.turn is "P2":
                 move = random.randrange(8)
-            game.move(move_num=move)
+            game.step(move_num=move)
     except GameOver as e:
         if game.history['winner'] is "P1":
             num_win += 1
