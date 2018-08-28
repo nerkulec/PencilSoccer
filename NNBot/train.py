@@ -1,4 +1,4 @@
-from PencilGame.pencilGame import GameOver, Game
+from PencilGame.pencilGame import Game
 from PencilGame.bots import SearchBot
 from keras.models import Sequential
 from keras.layers import Conv2D, Flatten, Dense

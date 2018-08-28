@@ -77,15 +77,16 @@ class Game:
                     return True
         return False
 
-    def get_score(self):  # Close to P1's goal -> positive, middle -> 0, close to P2's goal -> negative
-                          # P1 won -> -1000000000, P2 won -> 1000000000
+    def get_score(self):  # Close to P1's goal -> negative, middle -> 0, close to P2's goal -> positive
+                          # P1 won -> 1000000000, P2 won -> -1000000000
         if self.winner is None:
             return self.ball[1] - (self.height - 1) // 2
         else:
-            return -1000000000 if self.winner is "P1" else 1000000000
+            return 1000000000 if self.winner is "P1" else -1000000000
 
-    def step(self, move_num, force=True):  # TODO: lite
+    def step(self, move_num, force=True):
         self.move_history.append([self.ball[0], self.ball[1], move_num, self.turn])
+        overwriting = False
         if not self._is_edge(self.ball, move_num):
             self._place_edge(self.ball, move_num)
             self.ball = [self.ball[0] + self.move_vectors[move_num][0], self.ball[1] + self.move_vectors[move_num][1]]
@@ -94,19 +95,23 @@ class Game:
             if self.ball in self.P2_goal:
                 self.winner = "P1"
         else:
+            overwriting = True
+            self.ball = [self.ball[0] + self.move_vectors[move_num][0], self.ball[1] + self.move_vectors[move_num][1]]
             if force:
                 self.winner = "P1" if self.turn is "P2" else "P2"
             else:
                 self.winner = "overwriting"
-        if not self._is_in_graph(self.ball, last_move_num=move_num):  # swap turn if player didn't bounce
+        self.last_turn = self.turn
+        if not self.winner and not self._is_in_graph(self.ball, last_move_num=move_num):  # swap turn if not bounce
             self.turn = "P1" if self.turn is "P2" else "P2"
-        return self.map, self.get_score(), self.winner, self.move_history
+        return self.map, self.get_score(), self.winner, overwriting
 
-    def undo_last_step(self):
+    def undo_last_step(self, overwriting):
         last_turn = self.move_history.pop()
         last_move = self.move_vectors[last_turn[2]]
         self.ball = [self.ball[0] - last_move[0], self.ball[1] - last_move[1]]
-        self._erase_edge(self.ball, last_turn[2])
+        if not overwriting:
+            self._erase_edge(self.ball, last_turn[2])
         self.turn = last_turn[3]
         self.winner = None
         if len(self.move_history) >= 1:
@@ -126,7 +131,9 @@ class Game:
         if move_nums is None or continue_playing:
             while True:
                 if not silent:
+                    print(self.turn + ' to move')
                     [print(line) for line in self.render_map()]
+                    print()
                 if self.turn is "P1":
                     if self.bot_P1 is not None:
                         move = self.bot_P1.get_move()
@@ -134,7 +141,6 @@ class Game:
                         move = Game.move_num(input("({},{}) {}:".format(self.ball[0], self.ball[1], self.turn)))
                 else:
                     if self.bot_P2 is not None:
-                        self.bot_P2.update(self)
                         move = self.bot_P2.get_move()
                     else:
                         move = Game.move_num(input("({},{}) {}:".format(self.ball[0], self.ball[1], self.turn)))
@@ -145,7 +151,7 @@ class Game:
                     return winner
 
     def render_map(self):
-        map_graph = [list(' '*(3*self.width)) for _ in range(3*self.height)]
+        map_graph = [list(' '*(3*self.width)) for _ in range(3*self.height)]  # !!!! REVERSE ORDER - Y X !!!!
         for x in range(len(self.map)):
             for y in range(len(self.map[x])):
                 map_graph[y*3+0][x*3+1] = '|' if self._is_edge((x, y), 0) else ' '
@@ -156,10 +162,20 @@ class Game:
                 map_graph[y*3+2][x*3+0] = '/' if self._is_edge((x, y), 5) else ' '
                 map_graph[y*3+1][x*3+0] = '-' if self._is_edge((x, y), 6) else ' '
                 map_graph[y*3+0][x*3+0] = '\\' if self._is_edge((x, y), 7) else ' '
-                map_graph[y*3+1][x*3+1] = '*' if self._is_in_graph([x, y]) else ' '
-                if [x, y] in self.P1_goal + self.P2_goal:
+                map_graph[y*3+1][x*3+1] = '*' if self._is_in_graph([x, y]) else '.'
+                if [x, y] in self.P1_goal:
+                    map_graph[y * 3 + 1][x * 3 + 0] = '1'
+                    map_graph[y * 3 + 1][x * 3 + 2] = '1'
+                    map_graph[y*3+1][x*3+1] = 'G'
+                if [x, y] in self.P2_goal:
+                    map_graph[y * 3 + 1][x * 3 + 0] = '2'
+                    map_graph[y * 3 + 1][x * 3 + 2] = '2'
                     map_graph[y*3+1][x*3+1] = 'G'
         map_graph[self.ball[1] * 3 + 1][self.ball[0] * 3 + 1] = '1' if self.last_turn is "P1" else '2'
+        map_graph[0][0] = '-'
+        map_graph[0][3*self.width-1] = '-'
+        map_graph[3*self.height-1][0] = '+'
+        map_graph[3*self.height-1][3*self.width-1] = '+'
         map_graph = [''.join(line) for line in map_graph]
         return map_graph
 

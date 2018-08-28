@@ -24,22 +24,23 @@ class SearchBot(Bot):  # TODO: Real priority queued search
 
         game_scores = []
         for dir_num in range(len(self.game.move_vectors)):
-            map, score, winner, history = self.game.step(move_num=dir_num)
+            map, score, winner, overwriting = self.game.step(move_num=dir_num)
             if winner:
                 game_scores.append(score)
             else:
                 game_scores.append(self.search(depth - 1))
-            self.game.undo_last_step()
+            self.game.undo_last_step(overwriting)
         if self.game.turn is "P1":
-            if set_best_move:
-                self.best_move = np.argmin(game_scores)
-            return min(game_scores)
-        else:
             if set_best_move:
                 self.best_move = np.argmax(game_scores)
             return max(game_scores)
+        else:
+            if set_best_move:
+                self.best_move = np.argmin(game_scores)
+            return min(game_scores)
 
-    def get_move(self):
+    def get_move(self):  # TODO: if choice is ambigous choose randomly
+        self.best_move = None
         self.search(self.max_depth, set_best_move=True)
         return self.best_move
 
