@@ -2,11 +2,12 @@ import numpy as np
 
 
 class Game:
-    def __init__(self, width=7, height=8, lite=False):
+    def __init__(self, width=7, height=8, lite=False, value_model=None):
         self.width = width
         self.height = height
         self.bot_P1 = None
         self.bot_P2 = None
+        self.value_model = value_model
         self.lite = lite
         self.move_vectors = [[0, -1], [1, -1], [1, 0], [1, 1],
                              [0, 1], [-1, 1], [-1, 0], [-1, -1]]  # UP-> 0, then clockwise
@@ -77,13 +78,6 @@ class Game:
                     return True
         return False
 
-    def get_score(self):  # Close to P1's goal -> negative, middle -> 0, close to P2's goal -> positive
-                          # P1 won -> 1000000000, P2 won -> -1000000000
-        if self.winner is None:
-            return self.ball[1] - (self.height - 1) // 2
-        else:
-            return 1000000000 if self.winner is "P1" else -1000000000
-
     def step(self, move_num, force=True):
         self.move_history.append([self.ball[0], self.ball[1], move_num, self.turn])
         overwriting = False
@@ -104,7 +98,7 @@ class Game:
         self.last_turn = self.turn
         if not self.winner and not self._is_in_graph(self.ball, last_move_num=move_num):  # swap turn if not bounce
             self.turn = "P1" if self.turn is "P2" else "P2"
-        return self.map, self.get_score(), self.winner, overwriting
+        return self.map, self.ball[1], self.winner, overwriting
 
     def undo_last_step(self, overwriting):
         last_turn = self.move_history.pop()
@@ -123,7 +117,7 @@ class Game:
         """Plays the game indefinitely, returns winner"""
         if move_nums:
             for move_num in move_nums:
-                map, score, winner, history = self.step(move_num)
+                map, score, winner, overwriting = self.step(move_num)
                 if winner:
                     if not silent:
                         print("Winner is {}".format(winner))
@@ -132,6 +126,8 @@ class Game:
             while True:
                 if not silent:
                     print(self.turn + ' to move')
+                    if self.value_model:
+                        print('Value: {0:.2f}'.format(self.value_model.predict(np.array([self.get_env()]))[0][0]))
                     [print(line) for line in self.render_map()]
                     print()
                 if self.turn is "P1":
@@ -181,7 +177,8 @@ class Game:
 
     def get_env(self):
         end = np.zeros(shape=(self.height, self.width))
-        end[self.ball[1], self.ball[0]] = 1  # one-hot encoded pos
+        if 0 <= self.ball[0] < self.width and 0 <= self.ball[1] < self.height:
+            end[self.ball[1], self.ball[0]] = 1  # one-hot encoded pos
         env = np.transpose(np.array(self.map), axes=(2, 1, 0))  # channels-first, height, width
         env = np.concatenate((env, [end]))
         return env
